@@ -22,31 +22,10 @@ CHAT_ID = CHAT_ID
 
 # Расширенный список пар
 MIN_USDT_PER_SYMBOL = {
-    "BTC/USDT": 5.0,
-    "ETH/USDT": 5.0,
-    "BNB/USDT": 3.0,
-    "SOL/USDT": 1.0,
-    "XRP/USDT": 1.0,
-    "ADA/USDT": 1.0,
-    "AVAX/USDT": 2.0,
-    "DOT/USDT": 1.0,
-    "LINK/USDT": 2.0,
-    "MATIC/USDT": 1.0,
-    "DOGE/USDT": 1.0,
-    "LTC/USDT": 2.0,
-    "ATOM/USDT": 1.0,
-    "UNI/USDT": 2.0,
-    "XLM/USDT": 1.0,
-    "ETC/USDT": 2.0,
-    "FIL/USDT": 2.0,
-    "THETA/USDT": 1.0,
-    "EOS/USDT": 1.0,
-    "AAVE/USDT": 5.0,
-    "ALGO/USDT": 1.0,
-    "XTZ/USDT": 1.0,
-    "SAND/USDT": 1.0,
-    "MANA/USDT": 1.0,
-    "ENJ/USDT": 1.0,
+    "BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "XRP/USDT",
+    "ADA/USDT", "AVAX/USDT", "DOT/USDT", "LINK/USDT", "MATIC/USDT",
+    "DOGE/USDT", "LTC/USDT", "ATOM/USDT", "UNI/USDT", "XLM/USDT",
+    "ETC/USDT", "FIL/USDT", "THETA/USDT", "EOS/USDT", "AAVE/USDT"
 }
 
 # Оптимизированные режимы работы
@@ -94,14 +73,10 @@ TIMEFRAME_TREND = "1h"
 LIMIT = 100
 
 # Увеличенные минимальные суммы
-MIN_TRADE_USDT = 10.0  # 10 USDT минимум
+MIN_TRADE_USDT = 2.0  # 10 USDT минимум
 
 MIN_USDT_PER_SYMBOL = {
-    "BTC/USDT": 15.0, "ETH/USDT": 12.0, "BNB/USDT": 12.0, "SOL/USDT": 10.0,
-    "XRP/USDT": 8.0, "ADA/USDT": 8.0, "AVAX/USDT": 10.0, "DOT/USDT": 8.0,
-    "LINK/USDT": 8.0, "MATIC/USDT": 8.0, "DOGE/USDT": 10.0, "LTC/USDT": 8.0,
-    "ATOM/USDT": 8.0, "UNI/USDT": 8.0, "XLM/USDT": 8.0, "ETC/USDT": 8.0,
-    "FIL/USDT": 8.0, "THETA/USDT": 8.0, "EOS/USDT": 8.0, "AAVE/USDT": 8.0
+    "BTC/USDT": 5.0, "ETH/USDT": 5.0, "BNB/USDT": 3.0, "SOL/USDT": 1.0, "XRP/USDT": 1.0, "ADA/USDT": 1.0, "AVAX/USDT": 2.0, "DOT/USDT": 1.0, "LINK/USDT": 2.0, "MATIC/USDT": 1.0, "DOGE/USDT": 1.0, "LTC/USDT": 2.0, "ATOM/USDT": 1.0, "UNI/>
 }
 
 TAKER_FEE = 0.001
