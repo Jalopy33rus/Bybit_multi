@@ -16,10 +16,10 @@ from telegram import Bot, ParseMode
 from telegram.ext import Updater, CommandHandler
 
 # ====== ULTIMATE CONFIG ======
-API_KEY = os.getenv("BYBIT_API_KEY", "BAD0EojgsWuAi8pWj1")
-API_SECRET = os.getenv("BYBIT_API_SECRET", "xsZqrt7UvC9SJHEMdeEiavO3HGxvVKjEwKdL")
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "6021208398:AAEKxMvsNvpt-f1afnZ2TJwzcODCEQy6XZQ")
-CHAT_ID = 279609886
+API_KEY = os.getenv("BYBIT_API_KEY", "BYBIT_API_KEY")
+API_SECRET = os.getenv("BYBIT_API_SECRET", "BYBIT_API_SECRET")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "TELEGRAM_TOKEN")
+CHAT_ID = CHAT_ID
 
 # Расширенный список пар
 SYMBOLS = [
