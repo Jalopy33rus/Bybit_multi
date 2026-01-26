@@ -227,7 +227,7 @@ TRADING_MODES = {
         "max_trades": 3,
         "trade_pct": 0.08,
         
-        "timeframe_entry": "10m",
+        "timeframe_entry": "15m",
         "timeframe_trend": "30m",
         "timeframe_volatility": "2h",
         
@@ -246,7 +246,7 @@ TRADING_MODES = {
         "rsi_range_long": (22, 78),
         "rsi_range_short": (22, 78),
         
-        "volume_multiplier": 1.1,
+        "volume_multiplier": 0.8,
         "min_volume_score": 8,
         
         "max_atr_percentage": 0.10,
@@ -1174,7 +1174,7 @@ def validate_risk_reward(entry_price: float, stop_loss: float, take_profit: floa
 
 # ====== УЛУЧШЕННЫЙ АНАЛИЗ СИМВОЛОВ ======
 def analyze_symbol_with_filters(symbol: str) -> Optional[Dict]:
-    """Анализ символа со сбалансированными фильтрами"""
+    """Анализ символа со сбалансированными фильтрами и адаптацией к рынку"""
     try:
         update_filter_stats(symbol)
         
@@ -1251,7 +1251,6 @@ def analyze_symbol_with_filters(symbol: str) -> Optional[Dict]:
         # 5. Анализ волатильности С АДАПТАЦИЕЙ ДЛЯ РЕЖИМА
         volatility = get_volatility_analysis(symbol, settings['timeframe_volatility'])
         
-        # ============ ИСПРАВЛЕННАЯ ЛОГИКА ============
         # Определяем адаптированные пороги для агрессивного режима
         if CURRENT_MODE == "AGGRESSIVE":
             # Для агрессивного режима снижаем требования на 40%
@@ -1275,7 +1274,6 @@ def analyze_symbol_with_filters(symbol: str) -> Optional[Dict]:
             logger.debug(f"⏹️ {symbol} filtered: low volatility {volatility['atr_percentage']:.1f}% < {min_atr_required:.1f}%")
             update_filter_stats(symbol, "low_volatility", False)
             return None
-        # ============ КОНЕЦ ИСПРАВЛЕНИЯ ============
         
         # 6. Технический анализ на входном ТФ
         df = get_ohlcv_data(symbol, settings['timeframe_entry'], 100)
@@ -1320,6 +1318,46 @@ def analyze_symbol_with_filters(symbol: str) -> Optional[Dict]:
         ema_20 = df['close'].ewm(span=20).mean().iloc[-1]
         ema_50 = df['close'].ewm(span=50).mean().iloc[-1]
         
+        # Определяем, находится ли рынок в боковике (для адаптации фильтров)
+        is_market_ranging = False
+        if CURRENT_MODE == "AGGRESSIVE":
+            # Проверяем диапазон на старшем ТФ
+            df_higher = get_ohlcv_data(symbol, "4h", 20)
+            if df_higher is not None and len(df_higher) >= 10:
+                price_range = (df_higher['high'].max() - df_higher['low'].min()) / df_higher['close'].mean()
+                if price_range < 0.03:  # Диапазон меньше 3% = боковик
+                    is_market_ranging = True
+                    logger.info(f"📊 {symbol}: рынок в боковике (диапазон {price_range:.2%} < 3%)")
+        
+        # ============ АДАПТИВНЫЕ MACD ПОРОГИ ============
+        # Основные пороги в зависимости от силы тренда
+        if "VERY_WEAK" in trend_analysis["direction"]:
+            base_macd_threshold = 0.0003    # Очень слабый тренд - ослабляем
+        elif "WEAK" in trend_analysis["direction"]:
+            base_macd_threshold = 0.0002  # Слабый тренд
+        else:
+            base_macd_threshold = 0.0001  # Сильный тренд
+        
+        # Дополнительное ослабление в боковике
+        if is_market_ranging:
+            base_macd_threshold *= 2.0  # Удваиваем порог в боковике
+        
+        # ============ АДАПТАЦИЯ К СИЛЬНОМУ ТРЕНДУ ============
+        # ВАЖНО: Ослабляем фильтры только ПОСЛЕ объявления переменных!
+        volume_adjustment = 1.0
+        macd_adjustment = 1.0
+        
+        if trend_analysis["strength"] > 30:  # Сильный тренд
+            macd_adjustment = 2.0      # Ослабляем MACD фильтр в 2 раза
+            volume_adjustment = 0.7    # Ослабляем объем на 30%
+            logger.info(f"📊 {symbol}: сильный тренд (ADX={trend_analysis['strength']:.1f}), "
+                       f"ослабляем MACD x{macd_adjustment:.1f}, объем x{volume_adjustment:.1f}")
+        
+        # Применяем адаптацию к сильному тренду
+        macd_threshold = base_macd_threshold * macd_adjustment
+        
+        # ============ КОНЕЦ АДАПТАЦИИ MACD ============
+        
         if position_type == "LONG":
             # Проверяем откат к поддержке
             
@@ -1336,10 +1374,10 @@ def analyze_symbol_with_filters(symbol: str) -> Optional[Dict]:
                 price_at_key_level = True
                 correction_depth = min(price_to_ema20, price_to_ema50)
             
-            # Проверка согласованности MACD (ослаблена для агрессивного режима)
-            macd_threshold = -0.001 if CURRENT_MODE == "AGGRESSIVE" else -0.0005
-            if not (macd_histogram > macd_threshold):
-                logger.debug(f"⏹️ {symbol} filtered: MACD not bullish enough for LONG ({macd_histogram:.6f} <= {macd_threshold})")
+            # Проверка согласованности MACD с адаптивным порогом
+            if not (macd_histogram > -macd_threshold):
+                logger.debug(f"⏹️ {symbol} filtered: MACD not bullish enough for LONG "
+                           f"({macd_histogram:.6f} <= {-macd_threshold:.6f}, порог адаптирован для {trend_analysis['direction']})")
                 update_filter_stats(symbol, "macd_not_aligned", False)
                 return None
                 
@@ -1359,32 +1397,53 @@ def analyze_symbol_with_filters(symbol: str) -> Optional[Dict]:
                 price_at_key_level = True
                 correction_depth = min(price_to_ema20, price_to_ema50)
             
-            # Проверка согласованности MACD (ослаблена для агрессивного режима)
-            macd_threshold = 0.001 if CURRENT_MODE == "AGGRESSIVE" else 0.0005
+            # Проверка согласованности MACD с адаптивным порогом
             if not (macd_histogram < macd_threshold):
-                logger.debug(f"⏹️ {symbol} filtered: MACD not bearish enough for SHORT ({macd_histogram:.6f} >= {macd_threshold})")
+                logger.debug(f"⏹️ {symbol} filtered: MACD not bearish enough for SHORT "
+                           f"({macd_histogram:.6f} >= {macd_threshold:.6f}, порог адаптирован для {trend_analysis['direction']})")
                 update_filter_stats(symbol, "macd_not_aligned", False)
                 return None
         
-        # Фильтр RSI с учетом режима
-        rsi_range = settings['rsi_range_long'] if position_type == "LONG" else settings['rsi_range_short']
+        # Фильтр RSI с учетом режима и направления тренда
+        if "BEARISH" in trend_analysis["direction"]:
+            # Для медвежьего рынка расширяем диапазон RSI
+            rsi_range_long = settings.get('rsi_range_bearish_long', settings['rsi_range_long'])
+            rsi_range_short = settings.get('rsi_range_bearish_short', settings['rsi_range_short'])
+        else:
+            rsi_range_long = settings['rsi_range_long']
+            rsi_range_short = settings['rsi_range_short']
+        
+        rsi_range = rsi_range_long if position_type == "LONG" else rsi_range_short
         if not (rsi_range[0] <= rsi <= rsi_range[1]):
             logger.debug(f"⏹️ {symbol} filtered: RSI {rsi:.1f} outside range {rsi_range}")
             update_filter_stats(symbol, "rsi_out_of_range", False)
             return None
         
-        # Фильтр объема с учетом волатильности символа
+        # Фильтр объема с адаптацией к рынку
         required_volume_ratio = settings['volume_multiplier']
-        # Для волатильных символов снижаем требования к объему
-        if SYMBOL_CATEGORIES.get(symbol, {}).get("volatility") in ["HIGH", "VERY_HIGH"]:
-            required_volume_ratio *= 0.8  # Снижаем на 20% для волатильных
+        
+        # Адаптация к рынку:
+        if is_market_ranging:
+            # В боковике снижаем требования к объему на 50%
+            required_volume_ratio *= 0.5
+            logger.info(f"📊 {symbol}: снижаем требования к объему в боковике до {required_volume_ratio:.1f}x")
+        elif SYMBOL_CATEGORIES.get(symbol, {}).get("volatility") in ["HIGH", "VERY_HIGH"]:
+            required_volume_ratio *= 0.8  # 20% снижение для волатильных
+        
+        # Дополнительное ослабление для VERY_WEAK трендов
+        if "VERY_WEAK" in trend_analysis["direction"]:
+            required_volume_ratio *= 0.7  # Еще 30% снижение
+        
+        # Применяем адаптацию к сильному тренду (уже объявлена выше)
+        required_volume_ratio *= volume_adjustment
         
         if volume_ratio < required_volume_ratio:
-            logger.debug(f"⏹️ {symbol} filtered: low volume {volume_ratio:.1f}x < {required_volume_ratio:.1f}x")
+            logger.debug(f"⏹️ {symbol} filtered: low volume {volume_ratio:.1f}x < {required_volume_ratio:.1f}x "
+                        f"(адаптировано для {trend_analysis['direction']})")
             update_filter_stats(symbol, "low_volume", False)
             return None
         
-        # Расчет score
+        # Расчет score с адаптацией для слабых трендов
         score = 0
         reasons = []
         
@@ -1393,31 +1452,37 @@ def analyze_symbol_with_filters(symbol: str) -> Optional[Dict]:
         score += trend_score
         reasons.append(f"TREND_{trend_analysis['direction']}")
         
-        # Бонус за сильный тренд
+        # Бонус за сильный тренд (только для не VERY_WEAK)
         if trend_analysis["strength"] > 30:
             score += 5
             reasons.append("STRONG_TREND")
-        elif trend_analysis["strength"] > 25:
+        elif trend_analysis["strength"] > 25 and "VERY_WEAK" not in trend_analysis["direction"]:
             score += 3
             reasons.append("MODERATE_TREND")
+        elif "VERY_WEAK" in trend_analysis["direction"]:
+            # Для VERY_WEAK даем небольшой бонус за прохождение фильтров
+            score += 2
+            reasons.append("VERY_WEAK_PASSED")
         
-        # Объем (макс 15)
+        # Объем (макс 15) с бонусом за высокий объем
         volume_score = min(volume_ratio * 8, 15) if volume_ratio >= required_volume_ratio else 0
         score += volume_score
         if volume_score > 0:
             reasons.append("HIGH_VOLUME")
         
-        # RSI (макс 15)
+        # RSI (макс 15) с бонусами за экстремальные значения
         if rsi_range[0] <= rsi <= rsi_range[1]:
             score += 15
             reasons.append("GOOD_RSI")
-            # Бонус за оптимальный RSI
-            if position_type == "LONG" and rsi < 35:
-                score += 3
-                reasons.append("RSI_OVERSOLD")
-            elif position_type == "SHORT" and rsi > 65:
-                score += 3
-                reasons.append("RSI_OVERBOUGHT")
+            
+            # Бонус за оптимальный RSI (только для не VERY_WEAK)
+            if "VERY_WEAK" not in trend_analysis["direction"]:
+                if position_type == "LONG" and rsi < 35:
+                    score += 3
+                    reasons.append("RSI_OVERSOLD")
+                elif position_type == "SHORT" and rsi > 65:
+                    score += 3
+                    reasons.append("RSI_OVERBOUGHT")
         
         # Коррекция к ключевому уровню (макс 20)
         if price_at_key_level:
@@ -1432,6 +1497,10 @@ def analyze_symbol_with_filters(symbol: str) -> Optional[Dict]:
             elif correction_depth > 0.02:  # Средняя коррекция >2%
                 score += 3
                 reasons.append("MEDIUM_CORRECTION")
+            elif correction_depth > 0.01 and "VERY_WEAK" in trend_analysis["direction"]:
+                # Для VERY_WEAK даже небольшая коррекция - хорошо
+                score += 2
+                reasons.append("LIGHT_CORRECTION")
         else:
             update_filter_stats(symbol, "price_not_at_key_level", False)
             logger.debug(f"⏹️ {symbol} filtered: price not at key level")
@@ -1442,27 +1511,33 @@ def analyze_symbol_with_filters(symbol: str) -> Optional[Dict]:
             score += 10
             reasons.append("GOOD_VOLATILITY")
             
-            # Бонус за хорошую волатильность
-            if 0.02 <= bb_width <= 0.05:  # Оптимальный диапазон
+            # Бонус за оптимальную волатильность (только для не VERY_WEAK)
+            if "VERY_WEAK" not in trend_analysis["direction"] and 0.02 <= bb_width <= 0.05:
                 score += 3
                 reasons.append("OPTIMAL_VOLATILITY")
         
         # Согласованность индикаторов (макс 10)
-        macd_threshold_for_score = -0.001 if CURRENT_MODE == "AGGRESSIVE" else -0.0005
-        if position_type == "LONG" and macd_histogram > macd_threshold_for_score:
+        if position_type == "LONG" and macd_histogram > -macd_threshold:
             score += 10
             reasons.append("MACD_BULLISH")
-            # Бонус за сильный MACD
-            if macd_histogram > 0.001:
+            
+            # Бонус за сильный MACD (только для не VERY_WEAK)
+            if "VERY_WEAK" not in trend_analysis["direction"] and macd_histogram > 0.001:
                 score += 3
                 reasons.append("STRONG_MACD_BULLISH")
-        elif position_type == "SHORT" and macd_histogram < -macd_threshold_for_score:
+        elif position_type == "SHORT" and macd_histogram < macd_threshold:
             score += 10
             reasons.append("MACD_BEARISH")
-            # Бонус за сильный MACD
-            if macd_histogram < -0.001:
+            
+            # Бонус за сильный MACD (только для не VERY_WEAK)
+            if "VERY_WEAK" not in trend_analysis["direction"] and macd_histogram < -0.001:
                 score += 3
                 reasons.append("STRONG_MACD_BEARISH")
+        
+        # Дополнительный бонус за прохождение всех фильтров в боковике
+        if is_market_ranging:
+            score += 5
+            reasons.append("RANGING_MARKET_BONUS")
         
         # Применяем адаптивный scoring
         base_signal = {
@@ -1485,7 +1560,8 @@ def analyze_symbol_with_filters(symbol: str) -> Optional[Dict]:
             "correction_depth": correction_depth,
             "macd_histogram": macd_histogram,
             "ema_20": ema_20,
-            "ema_50": ema_50
+            "ema_50": ema_50,
+            "is_market_ranging": is_market_ranging
         }
         
         adaptive_score = calculate_adaptive_score(base_signal)
@@ -1494,7 +1570,8 @@ def analyze_symbol_with_filters(symbol: str) -> Optional[Dict]:
         logger.info(f"🎯 {symbol} {position_type}: Score={adaptive_score}, "
                    f"Trend={trend_analysis['direction']} ({trend_analysis['strength']:.1f}), "
                    f"RSI={rsi:.1f}, Vol={volume_ratio:.1f}x, "
-                   f"Correction={'YES' if price_at_key_level else 'NO'} {correction_depth:.2%}")
+                   f"Correction={'YES' if price_at_key_level else 'NO'} {correction_depth:.2%}, "
+                   f"MACD={macd_histogram:.6f}, BB={bb_width:.3%}")
         
         if adaptive_score >= settings['min_score']:
             update_filter_stats(symbol, passed=True)
@@ -1634,6 +1711,22 @@ def can_open_new_trade():
 # ====== ОТКРЫТИЕ ПОЗИЦИЙ ======
 def open_position(signal: Dict):
     try:
+        logger.info(f"🚀 Пытаемся открыть позицию: {signal.get('symbol')}")
+        logger.info(f"📊 Параметры сигнала: цена={signal.get('price')}, score={signal.get('score')}")
+        
+        symbol = signal['symbol']
+        current_price = signal['price']
+        position_type = signal['signal_type']
+        signal_score = signal['score']
+        settings = get_current_settings()
+        
+        # ДОБАВИТЬ: Логирование информации о символе
+        symbol_info = get_symbol_info(symbol)
+        logger.info(f"📋 Инфо о символе {symbol}:")
+        logger.info(f"  contract_size: {symbol_info.get('contract_size')}")
+        logger.info(f"  price_precision: {symbol_info.get('price_precision')}")
+        logger.info(f"  amount_precision: {symbol_info.get('amount_precision')}")
+        logger.info(f"  min_amount: {symbol_info.get('min_amount')}")
         symbol = signal['symbol']
         current_price = signal['price']
         position_type = signal['signal_type']
@@ -1665,7 +1758,12 @@ def open_position(signal: Dict):
         
         leverage = settings['leverage']
         base_amount = trade_amount_usdt / (current_price * contract_size)
-        
+        base_amount = round(base_amount, amount_precision)
+        min_amount = symbol_info.get('min_amount', 0)
+        if min_amount > 0 and base_amount < min_amount:
+            logger.info(f"⏹️ Amount too small for {symbol}: {base_amount:.8f} < {min_amount}")
+            return False
+
         # Проверка RR на базовых значениях
         base_max_stop_loss = settings['max_stop_loss']
         base_take_profit = settings['take_profit']
